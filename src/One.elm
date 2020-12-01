@@ -206,6 +206,11 @@ list =
     ]
 
 
-answer : List Int -> Int
-answer l =
-    List.foldl (*) 1 (l |> List.filter (\n -> List.member (2020 - n) l))
+answer11 : List Int -> Int -> Int
+answer11 l sum =
+    List.foldl (*) 1 (l |> List.filter (\n -> List.member (sum - n) l))
+
+
+answer12 : List Int -> Int -> Int
+answer12 l sum =
+    List.foldl (*) 1 (l |> List.filter (\n -> answer11 l (sum - n) > 1))
