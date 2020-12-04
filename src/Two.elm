@@ -1,6 +1,5 @@
 module Two exposing (..)
 
-import Char
 import Parser exposing (..)
 
 
