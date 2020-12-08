@@ -1,5 +1,8 @@
 module Four exposing (..)
 
+import Dict
+import Parser exposing (..)
+
 
 required_fields =
     [ "byr"
@@ -33,6 +36,10 @@ p3 =
     "hcl:#ae17e1 iyr:2013\neyr:2024\necl:brn pid:760753108 byr:1931\nhgt:179cm"
 
 
+p4 =
+    String.replace "\n" " " p3
+
+
 q p =
     List.foldl
         (\item valid ->
@@ -49,5 +56,188 @@ q p =
         required_fields
 
 
+premap b =
+    String.split "\n\n" b |> List.map (\p -> String.replace "\n" " " p)
+
+
 answer41 =
-    String.split "\n\n" big_batch |> List.filter (\passport -> q passport) |> List.length
+    premap big_batch |> List.filter (\passport -> q passport) |> List.length
+
+
+
+-- basically a copy of https://ellie-app.com/bJycmLbmvGka1
+
+
+type alias Passport =
+    Dict.Dict String String
+
+
+isNotWhiteSpace : Char -> Basics.Bool
+isNotWhiteSpace c =
+    c /= ' ' && c /= '\n'
+
+
+validatePassport : String -> Maybe Passport
+validatePassport s =
+    case Parser.run parsePassport s of
+        Ok passport ->
+            passport
+
+        Err _ ->
+            Nothing
+
+
+parsePassport : Parser (Maybe Passport)
+parsePassport =
+    Parser.loop Dict.empty parseField
+
+
+parseField : Passport -> Parser (Parser.Step Passport (Maybe Passport))
+parseField soFar =
+    Parser.oneOf
+        [ Parser.succeed (handleField soFar)
+            |= Parser.getChompedString
+                (Parser.chompWhile ((/=) ':'))
+            |. Parser.symbol ":"
+            |= Parser.getChompedString
+                (Parser.chompWhile isNotWhiteSpace)
+            |. Parser.spaces
+        , Parser.succeed ()
+            |> Parser.map (finalize soFar)
+        ]
+
+
+handleField :
+    Passport
+    -> String
+    -> String
+    -> Parser.Step Passport (Maybe Passport)
+handleField soFar key val =
+    Parser.Loop <| Dict.insert key val soFar
+
+
+finalize : Passport -> () -> Parser.Step Passport (Maybe Passport)
+finalize soFar () =
+    Parser.Done <|
+        if hasAllFields soFar then
+            Just soFar
+
+        else
+            Nothing
+
+
+hasAllFields : Passport -> Bool
+hasAllFields hp =
+    Dict.size hp
+        == 8
+        || (Dict.size hp
+                == 7
+                && (not <| Dict.member "cid" hp)
+           )
+
+
+testResult : Passport -> Bool
+testResult hp =
+    [ ( "byr", inRange 1920 2002 )
+    , ( "iyr", inRange 2010 2020 )
+    , ( "eyr", inRange 2020 2030 )
+    , ( "ecl"
+      , \c ->
+            String.contains c "amb blu brn gry grn hzl oth"
+      )
+    , ( "hcl", passesParser parseHcl )
+    , ( "pid", passesParser parsePid )
+    , ( "hgt", passesParser parseHgt )
+    ]
+        |> List.map (applyTest hp)
+        |> List.member False
+        |> not
+
+
+inRange : Int -> Int -> String -> Bool
+inRange btm top s =
+    case String.toInt s of
+        Just n ->
+            btm <= n && n <= top
+
+        Nothing ->
+            False
+
+
+passesParser : Parser Bool -> String -> Bool
+passesParser parser s =
+    case Parser.run parser s of
+        Ok b ->
+            b
+
+        Err _ ->
+            False
+
+
+parseHcl : Parser Bool
+parseHcl =
+    Parser.succeed checkHcl
+        |. Parser.symbol "#"
+        |= Parser.getChompedString
+            (Parser.chompWhile Char.isHexDigit)
+        |. Parser.end
+
+
+checkHcl : String -> Bool
+checkHcl s =
+    String.length s == 6
+
+
+parsePid : Parser Bool
+parsePid =
+    Parser.succeed checkPid
+        |= Parser.getChompedString
+            (Parser.chompWhile Char.isDigit)
+        |. Parser.end
+
+
+checkPid : String -> Bool
+checkPid s =
+    String.length s == 9
+
+
+parseHgt : Parser Bool
+parseHgt =
+    Parser.succeed checkHgt
+        |= Parser.getChompedString
+            (Parser.chompWhile Char.isDigit)
+        |= Parser.getChompedString
+            (Parser.chompWhile Char.isLower)
+        |. Parser.end
+
+
+checkHgt : String -> String -> Bool
+checkHgt numeric unit =
+    case ( String.toInt numeric, unit ) of
+        ( Just n, "in" ) ->
+            59 <= n && n <= 76
+
+        ( Just n, "cm" ) ->
+            150 <= n && n <= 193
+
+        _ ->
+            False
+
+
+applyTest : Passport -> ( String, String -> Bool ) -> Bool
+applyTest hp ( key, test ) =
+    Dict.get key hp |> Maybe.map test |> flattenMaybeBool
+
+
+flattenMaybeBool : Maybe Bool -> Bool
+flattenMaybeBool mb =
+    case mb of
+        Just b ->
+            b
+
+        Nothing ->
+            False
+
+
+answer42 =
+    premap big_batch |> List.filterMap validatePassport |> List.map testResult |> List.filter (\n -> n) |> List.length
